@@ -1,12 +1,29 @@
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
+const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Configuració de sessions per protegir el CRM
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'clau-secreta-molt-segura-per-crm-2026',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false } // Posa true si utilitzes HTTPS estricte amb proxy de confiança
+}));
+
+// Middleware per comprovar si l'usuari ha iniciat sessió
+const requireLogin = (req, res, next) => {
+    if (req.session && req.session.loggedIn) {
+        return next();
+    }
+    res.redirect('/');
+};
 
 // 1. Connectar a la base de dades PostgreSQL (Local o Núvol)
 const pool = new Pool({
@@ -60,7 +77,7 @@ const initDb = async () => {
         const resUser = await pool.query("SELECT * FROM users WHERE username = $1", ['JORDIttwCrm']);
         if (resUser.rows.length === 0) {
             await pool.query("INSERT INTO users (username, password, role) VALUES ($1, $2, $3)", ['JORDIttwCrm', '@#Jordiadmin@#', 'JORDIttwCrm']);
-            console.log('Usuari administrador creat per defecte (admin / 1234).');
+            console.log('Usuari administrador creat per defecte.');
         }
     } catch (err) {
         console.error('Error inicialitzant la base de dades:', err.message);
@@ -68,8 +85,11 @@ const initDb = async () => {
 };
 initDb();
 
-// 3. Login
+// 3. Login (Pàgina d'accés)
 app.get('/', (req, res) => {
+    if (req.session && req.session.loggedIn) {
+        return res.redirect('/panel');
+    }
     res.send(`
         <!DOCTYPE html>
         <html lang="ca">
@@ -105,7 +125,9 @@ app.post('/login', async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM users WHERE username = $1 AND password = $2", [username, password]);
         if (result.rows.length > 0) {
-            res.redirect('/panel?user=' + encodeURIComponent(result.rows[0].username) + '&category=Fotografia');
+            req.session.loggedIn = true;
+            req.session.username = result.rows[0].username;
+            res.redirect('/panel');
         } else {
             res.send("<body style='background:#18181b;color:white;text-align:center;padding-top:50px;font-family:sans-serif;'><h2>Credencials incorrectes</h2><a href='/' style='color:#ef4444;'>Tornar</a></body>");
         }
@@ -114,9 +136,16 @@ app.post('/login', async (req, res) => {
     }
 });
 
-// 4. Panell Principal
-app.get('/panel', async (req, res) => {
-    const username = req.query.user || 'JORDIttwCrm';
+// Tancar sessió
+app.get('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.redirect('/');
+    });
+});
+
+// 4. Panell Principal (Protegit amb requireLogin)
+app.get('/panel', requireLogin, async (req, res) => {
+    const username = req.session.username || 'JORDIttwCrm';
     const currentCategory = req.query.category || 'Fotografia'; 
 
     const isPhoto = currentCategory === 'Fotografia';
@@ -213,12 +242,11 @@ app.get('/panel', async (req, res) => {
                     </td>
                     <td><span class="badge ${c.status}">${c.status}</span></td>
                     <td style="text-align: right; white-space: nowrap;">
-                        <a href="/edit-client/${c.id}?user=${encodeURIComponent(username)}" class="btn-action btn-edit" title="Editar">✏️</a>
+                        <a href="/edit-client/${c.id}" class="btn-action btn-edit" title="Editar">✏️</a>
                         ${isClientPhoto ? `<a href="/download-ics/${c.id}" class="btn-action btn-ics" title="Afegir al Calendari iPhone (.ics)">📅</a>` : ''}
                         <a href="/view-pdf/${c.id}" target="_blank" class="btn-action btn-pdf" title="Veure PDF Pressupost">📄</a>
                         <form action="/delete-client" method="POST" style="display:inline; margin: 0;">
                             <input type="hidden" name="id" value="${c.id}">
-                            <input type="hidden" name="user" value="${username}">
                             <input type="hidden" name="category" value="${currentCategory}">
                             <button type="submit" class="btn-action btn-delete" onclick="return confirm('Segur que vols eliminar aquest client?')" title="Eliminar">✕</button>
                         </form>
@@ -232,7 +260,6 @@ app.get('/panel', async (req, res) => {
             formContent = `
                 <h3>Nou Projecte de Fotografia</h3>
                 <form id="main-client-form" action="/add-client" method="POST" onsubmit="prepareFormAndSubmit(event)">
-                    <input type="hidden" name="user" value="${username}">
                     <input type="hidden" name="category" value="Fotografia">
                     <input type="hidden" name="service_details" id="service-details-hidden">
                     <input type="hidden" name="notes" id="notes-hidden">
@@ -389,7 +416,6 @@ app.get('/panel', async (req, res) => {
             formContent = `
                 <h3>Nou Projecte de Disseny Web</h3>
                 <form id="main-client-form" action="/add-client" method="POST" onsubmit="prepareWebFormAndSubmit(event)">
-                    <input type="hidden" name="user" value="${username}">
                     <input type="hidden" name="category" value="Web">
                     <input type="hidden" name="service_details" id="web-service-details-hidden">
 
@@ -797,14 +823,14 @@ app.get('/panel', async (req, res) => {
                         </div>
                         <div class="user-info">
                             Connectat com <strong>${username}</strong> 
-                            <a href="/">Tancar sessió</a>
+                            <a href="/logout">Tancar sessió</a>
                         </div>
                     </header>
 
                     <div class="tabs">
-                        <a href="/panel?user=${encodeURIComponent(username)}&category=Fotografia" class="tab ${currentCategory === 'Fotografia' ? 'active-photo' : ''}">📷 Fotografia</a>
-                        <a href="/panel?user=${encodeURIComponent(username)}&category=Web" class="tab ${currentCategory === 'Web' ? 'active-web' : ''}">💻 Disseny Web</a>
-                        <a href="/panel?user=${encodeURIComponent(username)}&category=all" class="tab" style="${currentCategory === 'all' ? 'background:#334155; color:white;' : ''}">📋 Tots els Clients</a>
+                        <a href="/panel?category=Fotografia" class="tab ${currentCategory === 'Fotografia' ? 'active-photo' : ''}">📷 Fotografia</a>
+                        <a href="/panel?category=Web" class="tab ${currentCategory === 'Web' ? 'active-web' : ''}">💻 Disseny Web</a>
+                        <a href="/panel?category=all" class="tab" style="${currentCategory === 'all' ? 'background:#334155; color:white;' : ''}">📋 Tots els Clients</a>
                     </div>
 
                     <div class="grid">
@@ -839,9 +865,9 @@ app.get('/panel', async (req, res) => {
     }
 });
 
-// 5. Guardar client nou
-app.post('/add-client', async (req, res) => {
-    const { name1, phone1, name2, phone2, email, category, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting, user } = req.body;
+// 5. Guardar client nou (Protegit)
+app.post('/add-client', requireLogin, async (req, res) => {
+    const { name1, phone1, name2, phone2, email, category, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting } = req.body;
     const finalDeposit = deposit ? parseFloat(deposit) : 0;
     const finalPrice = estimated_price ? parseFloat(estimated_price) : 0;
 
@@ -850,24 +876,23 @@ app.post('/add-client', async (req, res) => {
             `INSERT INTO clients (name1, phone1, name2, phone2, email, category, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [name1, phone1, name2 || null, phone2 || null, email, category, event_date || null, service_details || '', finalPrice, finalDeposit, deposit_date || null, status, notes || '', web_domain_hosting || null]
         );
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm') + '&category=' + category);
+        res.redirect('/panel?category=' + category);
     } catch (err) {
         console.error('Error al guardar:', err.message);
         res.status(500).send("Error guardant client");
     }
 });
 
-// 6. Vista per Editar Client
-app.get('/edit-client/:id', async (req, res) => {
+// 6. Vista per Editar Client (Protegit)
+app.get('/edit-client/:id', requireLogin, async (req, res) => {
     const clientId = req.params.id;
-    const username = req.query.user || 'JORDIttwCrm';
 
     try {
         const result = await pool.query("SELECT * FROM clients WHERE id = $1", [clientId]);
         const client = result.rows[0];
 
         if (!client) {
-            return res.send("Client no trobat. <a href='/panel?user=" + encodeURIComponent(username) + "'>Tornar</a>");
+            return res.send("Client no trobat. <a href='/panel'>Tornar</a>");
         }
 
         const isPhoto = client.category === 'Fotografia';
@@ -931,8 +956,6 @@ app.get('/edit-client/:id', async (req, res) => {
                 <div class="container">
                     <h2>Editar Projecte: ${titleName}</h2>
                     <form action="/update-client/${client.id}" method="POST">
-                        <input type="hidden" name="user" value="${username}">
-                        
                         ${editExtraFields}
 
                         ${isPhoto ? '<label>Data de l\'Esdeveniment</label><input type="date" name="event_date" value="' + (client.event_date || '') + '" required>' : ''}
@@ -964,7 +987,7 @@ app.get('/edit-client/:id', async (req, res) => {
 
                         <button type="submit">Guardar Canvis</button>
                     </form>
-                    <a href="/panel?user=${encodeURIComponent(username)}" class="back">← Tornar al Panell</a>
+                    <a href="/panel" class="back">← Tornar al Panell</a>
                 </div>
             </body>
             </html>
@@ -974,10 +997,10 @@ app.get('/edit-client/:id', async (req, res) => {
     }
 });
 
-// 7. Processar Actualització
-app.post('/update-client/:id', async (req, res) => {
+// 7. Processar Actualització (Protegit)
+app.post('/update-client/:id', requireLogin, async (req, res) => {
     const clientId = req.params.id;
-    const { name1, phone1, name2, phone2, email, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting, user } = req.body;
+    const { name1, phone1, name2, phone2, email, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting } = req.body;
     const finalDeposit = deposit ? parseFloat(deposit) : 0;
     const finalPrice = estimated_price ? parseFloat(estimated_price) : 0;
 
@@ -986,15 +1009,15 @@ app.post('/update-client/:id', async (req, res) => {
             `UPDATE clients SET name1 = $1, phone1 = $2, name2 = $3, phone2 = $4, email = $5, event_date = $6, service_details = $7, estimated_price = $8, deposit = $9, deposit_date = $10, status = $11, notes = $12, web_domain_hosting = $13 WHERE id = $14`,
             [name1, phone1, name2 || null, phone2 || null, email, event_date || null, service_details || '', finalPrice, finalDeposit, deposit_date || null, status, notes || '', web_domain_hosting || null, clientId]
         );
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm'));
+        res.redirect('/panel');
     } catch (err) {
         console.error('Error al actualitzar:', err.message);
         res.status(500).send("Error actualitzant client");
     }
 });
 
-// 8. Generar fitxer .ICS
-app.get('/download-ics/:id', async (req, res) => {
+// 8. Generar fitxer .ICS (Protegit)
+app.get('/download-ics/:id', requireLogin, async (req, res) => {
     const clientId = req.params.id;
 
     try {
@@ -1028,8 +1051,8 @@ app.get('/download-ics/:id', async (req, res) => {
     }
 });
 
-// 9. Vista PDF / Pressupost
-app.get('/view-pdf/:id', async (req, res) => {
+// 9. Vista PDF / Pressupost (Protegit)
+app.get('/view-pdf/:id', requireLogin, async (req, res) => {
     const clientId = req.params.id;
 
     try {
@@ -1151,12 +1174,12 @@ app.get('/view-pdf/:id', async (req, res) => {
     }
 });
 
-// 10. Eliminar client
-app.post('/delete-client', async (req, res) => {
-    const { id, user, category } = req.body;
+// 10. Eliminar client (Protegit)
+app.post('/delete-client', requireLogin, async (req, res) => {
+    const { id, category } = req.body;
     try {
         await pool.query(`DELETE FROM clients WHERE id = $1`, [id]);
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm') + '&category=' + (category || 'Fotografia'));
+        res.redirect('/panel?category=' + (category || 'Fotografia'));
     } catch (err) {
         res.status(500).send("Error eliminant client");
     }
