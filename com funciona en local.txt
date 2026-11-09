@@ -1,0 +1,15 @@
+
+
+COM FUNCIONA EN LOCAL
+
+
+Abrir TERMINAL
+
+cd "/Users/jordi/Desktop/projectes meus IA/meu-crm"
+
+Axil conecta la BBDD i ara falta que si diguem que arranque el sistema
+
+node server.js
+
+
+La url es: http://localhost:3000
