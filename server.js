@@ -57,9 +57,9 @@ const initDb = async () => {
             );
         `);
 
-        const resUser = await pool.query("SELECT * FROM users WHERE username = $1", ['admin']);
+        const resUser = await pool.query("SELECT * FROM users WHERE username = $1", ['JORDIttwCrm']);
         if (resUser.rows.length === 0) {
-            await pool.query("INSERT INTO users (username, password, role) VALUES ($1, $2, $3)", ['admin', '1234', 'admin']);
+            await pool.query("INSERT INTO users (username, password, role) VALUES ($1, $2, $3)", ['JORDIttwCrm', '@#Jordiadmin@#', 'JORDIttwCrm']);
             console.log('Usuari administrador creat per defecte (admin / 1234).');
         }
     } catch (err) {
@@ -116,7 +116,7 @@ app.post('/login', async (req, res) => {
 
 // 4. Panell Principal
 app.get('/panel', async (req, res) => {
-    const username = req.query.user || 'Admin';
+    const username = req.query.user || 'JORDIttwCrm';
     const currentCategory = req.query.category || 'Fotografia'; 
 
     const isPhoto = currentCategory === 'Fotografia';
@@ -850,7 +850,7 @@ app.post('/add-client', async (req, res) => {
             `INSERT INTO clients (name1, phone1, name2, phone2, email, category, event_date, service_details, estimated_price, deposit, deposit_date, status, notes, web_domain_hosting) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [name1, phone1, name2 || null, phone2 || null, email, category, event_date || null, service_details || '', finalPrice, finalDeposit, deposit_date || null, status, notes || '', web_domain_hosting || null]
         );
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'Admin') + '&category=' + category);
+        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm') + '&category=' + category);
     } catch (err) {
         console.error('Error al guardar:', err.message);
         res.status(500).send("Error guardant client");
@@ -860,7 +860,7 @@ app.post('/add-client', async (req, res) => {
 // 6. Vista per Editar Client
 app.get('/edit-client/:id', async (req, res) => {
     const clientId = req.params.id;
-    const username = req.query.user || 'Admin';
+    const username = req.query.user || 'JORDIttwCrm';
 
     try {
         const result = await pool.query("SELECT * FROM clients WHERE id = $1", [clientId]);
@@ -986,7 +986,7 @@ app.post('/update-client/:id', async (req, res) => {
             `UPDATE clients SET name1 = $1, phone1 = $2, name2 = $3, phone2 = $4, email = $5, event_date = $6, service_details = $7, estimated_price = $8, deposit = $9, deposit_date = $10, status = $11, notes = $12, web_domain_hosting = $13 WHERE id = $14`,
             [name1, phone1, name2 || null, phone2 || null, email, event_date || null, service_details || '', finalPrice, finalDeposit, deposit_date || null, status, notes || '', web_domain_hosting || null, clientId]
         );
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'Admin'));
+        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm'));
     } catch (err) {
         console.error('Error al actualitzar:', err.message);
         res.status(500).send("Error actualitzant client");
@@ -1156,7 +1156,7 @@ app.post('/delete-client', async (req, res) => {
     const { id, user, category } = req.body;
     try {
         await pool.query(`DELETE FROM clients WHERE id = $1`, [id]);
-        res.redirect('/panel?user=' + encodeURIComponent(user || 'Admin') + '&category=' + (category || 'Fotografia'));
+        res.redirect('/panel?user=' + encodeURIComponent(user || 'JORDIttwCrm') + '&category=' + (category || 'Fotografia'));
     } catch (err) {
         res.status(500).send("Error eliminant client");
     }
